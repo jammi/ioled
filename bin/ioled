@@ -1,0 +1,62 @@
+#!/usr/bin/env ruby
+
+require 'maclight'
+
+
+# what to monitor (fs_usage requires root privileges)
+cmd = 'fs_usage -f diskio -w'
+
+# which disk to match
+diskln = '/dev/disk1'
+
+# STATUS[:wason] is used to buffer the state, since calling MacLight
+# in vain would cause quite high CPU utilization by this process
+STATUS = {
+  :wason => true # just in case it's initially on for some reason
+}
+
+def off
+  if STATUS[:wason]
+    MacLight.all_leds(false)
+    STATUS[:wason] = false
+  end
+end
+
+def on
+  if not STATUS[:wason]
+    MacLight.all_leds(true)
+    STATUS[:wason] = true
+  end
+end
+
+# initally turn led off
+off
+
+# spawns fs_usage and turns led on, when the device matches:
+Thread.new do
+  require 'pty'
+  PTY.spawn(cmd) do |stdout, stdin, pid|
+    begin
+      stdout.each do |line|
+        stripln = line.strip
+        splitln = stripln.split(' ').map do |part|
+          part.strip
+        end
+        on if splitln[4] == diskln
+      end
+    rescue Errno::EIO
+      puts 'EIO error'
+    end
+  end
+end
+
+# waits to be killed and turns the led off after 50ms:
+while true do
+  begin
+    sleep 0.05
+    off
+  rescue Interrupt
+    off
+    exit
+  end
+end
